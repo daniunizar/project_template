@@ -1,0 +1,122 @@
+#!/bin/bash
+
+set -e
+
+## Variable
+declare -a options=("help" "permissions" "cache" "fresh" "update" "tests")
+COMPOSER_PATH='/var/www/composer'
+PHP_PATH='/usr/local/bin/php'
+YES_PATH='/usr/bin/yes'
+
+function help {
+  ## This function prints the usage of the script
+
+  echo -e "\nTo use this script you need to pass an argument."
+  echo -e "\tupdate\t-> Updates the application."
+  echo -e "\tfresh\t-> Configure the application from scratch."
+  echo -e "\ttests\t -> Configure the application just to running the tests."
+  echo -e "\tpermissions -> Set the permissions."
+  echo -e "\tcache -> Clears the caches."
+  echo -e "\nBelow is an example:"
+  echo -e "\tbash etc/php-apache/app_configuration update"
+
+  exit 1
+}
+
+function permissions {
+  ## This function sets the permissions to the application directory
+
+  echo "Setting the permissions..."
+
+  ## Do not touch
+  chgrp -R www-data .
+
+  find . -type d -exec /bin/chmod 0775 {} \;
+  find . -type f -exec /bin/chmod 0664 {} \;
+  chmod 0755 ${COMPOSER_PATH}
+}
+
+function cache {
+  ## This function clears the cache
+
+  echo "Clearing the cache..."
+
+  ${PHP_PATH} artisan cache:clear
+  ${PHP_PATH} artisan config:clear
+
+  permissions
+}
+
+function fresh {
+  ## This function configures the application for the first time
+
+  echo "Configuring the application..."
+
+  permissions
+
+  ${COMPOSER_PATH} install --no-ansi \
+    --no-interaction \
+    --no-scripts \
+    --no-progress \
+    --prefer-dist
+
+  sleep 30
+
+  ${YES_PATH} | ${PHP_PATH} artisan migrate --seed
+  ${YES_PATH} | ${PHP_PATH} artisan storage:link
+
+  cache
+}
+
+function update {
+  ## This function updates the application
+
+
+  echo "Updating the application..."
+
+  ${COMPOSER_PATH} install --no-ansi \
+    --no-interaction \
+    --no-scripts \
+    --no-progress \
+    --prefer-dist
+
+  ${YES_PATH} | ${PHP_PATH} artisan migrate
+
+  cache
+}
+
+function tests {
+  ## This function configures the application but just the basics for testing
+
+  echo "Configuring the application for testing purpose..."
+
+  ${COMPOSER_PATH} install --no-ansi \
+    --no-interaction \
+    --no-scripts \
+    --no-progress \
+    --prefer-dist
+
+  permissions
+}
+
+## Checking if an argument was passed
+if [[ -z ${1} ]]
+  then
+    help
+  else
+    ARG=${1}
+fi
+
+## Avoding permission issues
+if [ -d html ]
+  then
+    rm -rf html
+fi
+
+## Checking if the argument is correct
+if echo "${options[*]}" | egrep -qo "\b${ARG}\b"
+  then
+    ${ARG}
+  else
+    help
+fi

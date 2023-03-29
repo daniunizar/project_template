@@ -1,0 +1,101 @@
+version: "3.8"
+
+services:
+  mysql:
+    env_file:
+      - .env
+    container_name: ${COMPOSE_PROJECT_NAME}_db
+    platform: linux/x86_64
+    build:
+      context: ./mysql
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    networks:
+      - localnetwork
+    ports:
+      - ${MYSQL_PORT}:3306
+    volumes:
+      - db-volume:/var/lib/mysql:rw
+    labels:
+      custom.project: ${COMPOSE_PROJECT_NAME}
+      custom.data: database
+    restart: always
+
+  mysql-test:
+    env_file:
+      - .env
+    container_name: ${COMPOSE_PROJECT_NAME}_db-test
+    platform: linux/x86_64
+    build:
+      context: ./mysql
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - localnetwork
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_TESTING_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_TESTING_DATABASE}
+      MYSQL_USER: ${MYSQL_TESTING_USER}
+      MYSQL_PASSWORD: ${MYSQL_TESTING_PASSWORD}
+    labels:
+      custom.project: ${COMPOSE_PROJECT_NAME}
+      custom.data: database-testing
+    restart: always
+
+  php-fpm:
+    depends_on:
+      - mysql
+      - mysql-test
+    env_file:
+      - .env
+    container_name: ${COMPOSE_PROJECT_NAME}_php-fpm
+    image: docker-image-php-fpm
+    networks:
+      - localnetwork
+    environment:
+      PHP_IDE_CONFIG: "serverName=Docker"
+    volumes:
+      - code-volume:/var/www/
+    labels:
+      custom.project: ${COMPOSE_PROJECT_NAME}
+      custom.data: code
+    restart: always
+
+  nginx:
+    depends_on:
+      - php-fpm
+    env_file:
+      - .env
+    container_name: ${COMPOSE_PROJECT_NAME}_nginx
+    image: docker-image-nginx
+    networks:
+      - localnetwork
+    ports:
+      - ${NGINX_HOST_HTTP_PORT}:80
+      - ${NGINX_HOST_HTTPS_PORT}:443
+    volumes:
+      - code-volume:/var/www/
+    labels:
+      custom.project: ${COMPOSE_PROJECT_NAME}
+      custom.data: code
+    restart: always
+
+networks:
+  localnetwork:
+    external:
+      name: ${DOCKER_NETWORK_NAME}
+
+volumes:
+  db-volume:
+    name: ${COMPOSE_PROJECT_NAME}_${DOCKER_VOLUME_DB}
+    labels:
+      custom.project: ${COMPOSE_PROJECT_NAME}
+      custom.data: database
+  code-volume:
+    name: ${COMPOSE_PROJECT_NAME}_${DOCKER_VOLUME_CODE}
+    labels:
+      custom.project: ${COMPOSE_PROJECT_NAME}
+      custom.data: code

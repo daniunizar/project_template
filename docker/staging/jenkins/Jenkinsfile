@@ -1,0 +1,328 @@
+// This pipeline is manually executed by a developer
+//
+// Client: php-laravel-template
+// Project: php-laravel-template
+// Repository: https://github.com/novadevs-opensource/php-laravel-template.git
+// Version: 1.2.0
+
+
+pipeline {
+
+  agent {
+    label 'st01-staging-novadevs'
+  }
+
+  options {
+    timeout(time: 10, unit: 'MINUTES')
+  }
+
+  parameters {
+    choice choices: ['Update', 'Reset', 'Delete'], description: 'How do you want to deploy the application?', name: 'DEPLOY_ACTION'
+    gitParameter branchFilter: 'origin/(.*)',
+                 defaultValue: 'master',
+                 description: 'Select the repository branch to deploy.',
+                 name: 'BRANCH_NAME',
+                 type: 'PT_BRANCH'
+  }
+
+  environment {
+    JENKINS_REPO_CREDENTIALS = 'github-cicd-tests'
+    PROJ_ENV = 'staging'
+    PROJ_REPO_URL = 'git@github.com:novadevs-opensource/php-laravel-template.git'
+    PROJ_TESTS_PATH= '/var/www/storage/'
+    PROJ_TESTS_FILE= 'tests-report.xml'
+    DOCKER_COMPOSE_PATH = 'docker compose'
+    DOCKER_BUILD_TAG_ROOT = 'novadevs'
+    DOCKER_PROJ_NAME = 'staging-php-laravel-template'
+    DOCKER_PROJ_LABEL = "custom.project=${DOCKER_PROJ_NAME}"
+    DOCKER_PROJ_LABEL_DATA = 'custom.data=code'
+    DOCKER_CONTAINER_APP = "${DOCKER_PROJ_NAME}_php-fpm"
+    DOCKER_CONTAINER_WEB = "${DOCKER_PROJ_NAME}_nginx"
+    AWS_PS_DOCKER_ENV = '/php-laravel-template/staging/docker-env'
+    AWS_PS_ENV = '/php-laravel-template/staging/env'
+    AWS_PS_ENV_TESTING = '/php-laravel-template/staging/env-testing'
+    SLACK_CHANNEL = 'C044MBHCG9M'
+    SLACK_MSG_SUCCESS = "*st01.staging.what2visit.com* - ${DOCKER_PROJ_NAME} \n\n*Branch:* ${params.BRANCH_NAME} \n\n*Deploy Type:* ${params.DEPLOY_ACTION} \n\n*User:* ${BUILD_USER} \n\n*Status:* :white_check_mark: \n\n *Build ID:* ${BUILD_ID} \n\n *Jenkins URL:* ${BUILD_URL}"
+    SLACK_MSG_UNSTABLE = "*st01.staging.what2visit.com* - ${DOCKER_PROJ_NAME} \n\n*Branch:* ${params.BRANCH_NAME} \n\n*Deploy Type:* ${params.DEPLOY_ACTION} \n\n*User:* ${BUILD_USER} \n\n*Status:* :warning: \n\n *Build ID:* ${BUILD_ID} \n\n *Jenkins URL:* ${BUILD_URL}"
+    SLACK_MSG_FAILURE = "*st01.staging.what2visit.com* - ${DOCKER_PROJ_NAME} \n\n*Branch:* ${params.BRANCH_NAME} \n\n*Deploy Type:* ${params.DEPLOY_ACTION} \n\n*User:* ${BUILD_USER} \n\n*Status:* :x:\n\n *Build ID:* ${BUILD_ID} \n\n *Jenkins URL:* ${BUILD_URL}"
+    SLACK_MSG_ABORTED = "*st01.staging.what2visit.com* - ${DOCKER_PROJ_NAME} \n\n*Branch:* ${params.BRANCH_NAME} \n\n*Deploy Type:* ${params.DEPLOY_ACTION} \n\n*User:* ${BUILD_USER} \n\n*Status:* Aborted :no_entry_sign: \n\n *Build ID:* ${BUILD_ID} \n\n *Jenkins URL:* ${BUILD_URL}"
+  }
+
+
+  stages {
+
+    // Stage 1
+    stage('Stage 1 - Checking if BRANCH_NAME parameter is empty') {
+      steps {
+      script {
+        if (params.BRANCH_NAME == "master") {
+          currentBuild.result = 'ABORTED'
+          error('BRANCH_NAME is empty. Try to build again but this time set the branch name in the parameter.')
+          }
+        }
+      }
+    }
+
+    // Stage 2
+    stage('Stage 2 - Cloning the repository') {
+      steps {
+        script {
+          try {
+            git branch: "${params.BRANCH_NAME}",
+              url: "${PROJ_REPO_URL}",
+              credentialsId: "${JENKINS_REPO_CREDENTIALS}"
+          } catch (err) {
+            echo "${err}"
+            error("The repository could not be cloned.")
+          }
+        }
+      }
+    }
+
+    // Stage 3
+    stage('Stage 3 - Downloading the required env files') {
+      steps {
+        script {
+          try {
+            sh """
+              sudo aws ssm get-parameter --with-decryption --name ${AWS_PS_DOCKER_ENV} --output text --query 'Parameter.Value' > docker/${PROJ_ENV}/.env
+              sudo aws ssm get-parameter --with-decryption --name ${AWS_PS_ENV} --output text --query 'Parameter.Value' > .env
+              sudo aws ssm get-parameter --with-decryption --name ${AWS_PS_ENV_TESTING} --output text --query 'Parameter.Value' > .env.testing
+            """
+          } catch (err) {
+            echo "${err}"
+            error("The env files could not be fetched.")
+          }
+        }
+      }
+    }
+
+    // Stage 4
+    stage('Stage 4 - Deleting the project') {
+      environment {
+        DOCKER_PROJ_STATUS = sh(returnStdout: true, script: "${DOCKER_COMPOSE_PATH} -f docker/${env.PROJ_ENV}/docker-compose.yml --env-file docker/${env.PROJ_ENV}/.env ps | wc -l").trim()
+      }
+      when {
+        expression {
+          params.DEPLOY_ACTION == 'Delete'
+        }
+      }
+      steps {
+        dir("docker/${env.PROJ_ENV}/") {
+          script {
+            try {
+              if (env.DOCKER_PROJ_STATUS.contains("1")) {
+                currentBuild.result = 'ABORTED'
+                error("Nothing to delete.")
+              }
+              else {
+                sh "${DOCKER_COMPOSE_PATH} --env-file .env down -v"
+                currentBuild.result = 'ABORTED'
+                error('Success deletion.')
+              }
+            } catch (err) {
+              sh "${DOCKER_COMPOSE_PATH} ps"
+              echo "${err}"
+              error('The deletion failed.')
+            }
+          }
+        }
+      }
+    }
+
+    // Stage 5
+    stage('Stage 5 - Building Nginx images') {
+      steps {
+        script {
+          try {
+            sh """
+              docker build \
+                -f docker/${PROJ_ENV}/nginx/Dockerfile \
+                -t ${DOCKER_BUILD_TAG_ROOT}/${env.DOCKER_CONTAINER_WEB}:${BUILD_NUMBER} \
+                .
+            """
+          } catch (err) {
+            echo "${err}"
+            error("The build for Nginx image failed.")
+          }
+        }
+      }
+    }
+
+    // Stage 6
+    stage('Stage 6 - Building PHP-FPM images') {
+      steps {
+        script {
+          try {
+            sh """
+              docker build \
+                -f docker/${PROJ_ENV}/php-fpm/Dockerfile \
+                -t ${DOCKER_BUILD_TAG_ROOT}/${DOCKER_CONTAINER_APP}:${BUILD_NUMBER} \
+                .
+            """
+          } catch (err) {
+            echo "${err}"
+            error("The build for PHP-FPM image failed.")
+          }
+        }
+      }
+    }
+
+    // Stage 7
+    stage('Stage 7 - Setting the image ID') {
+      steps {
+        dir("docker/${env.PROJ_ENV}/") {
+          script {
+            try {
+              sh """
+                sed -i "s#docker-image-php-fpm#${DOCKER_BUILD_TAG_ROOT}/${DOCKER_CONTAINER_APP}:${BUILD_NUMBER}#" docker-compose.yml
+                sed -i "s#docker-image-nginx#${DOCKER_BUILD_TAG_ROOT}/${env.DOCKER_CONTAINER_WEB}:${BUILD_NUMBER}#" docker-compose.yml
+              """
+            } catch (err) {
+              echo "${err}"
+              error("Image ID setting failed.")
+            }
+          }
+        }
+      }
+    }
+
+    // Stage 8a
+    stage('Stage 8a - Deploying the project from scratch') {
+      when {
+        expression {
+          params.DEPLOY_ACTION == 'Reset'
+        }
+      }
+      steps {
+        dir("docker/${env.PROJ_ENV}/") {
+          script {
+            try {
+              sh """
+                ${DOCKER_COMPOSE_PATH} --env-file .env down -v
+                ${DOCKER_COMPOSE_PATH} --env-file .env up -d
+              """
+            } catch (err) {
+              sh "${DOCKER_COMPOSE_PATH} --env-file .env down -v"
+              echo "${err}"
+              error('The deploy from scratch failed.')
+            }
+          }
+        }
+      }
+    }
+
+    // Stage 8b
+    stage('Stage 8b - Updating the project') {
+      environment {
+        DOCKER_PROJ_STATUS = sh(returnStdout: true, script: "${DOCKER_COMPOSE_PATH} -f docker/${env.PROJ_ENV}/docker-compose.yml --env-file docker/${env.PROJ_ENV}/.env ps | wc -l").trim()
+      }
+      when {
+        expression {
+          params.DEPLOY_ACTION == 'Update'
+        }
+      }
+      steps {
+        dir("docker/${env.PROJ_ENV}/") {
+          script {
+            try {
+              if (env.DOCKER_PROJ_STATUS.contains("1")) {
+                sh "${DOCKER_COMPOSE_PATH} --env-file .env up -d"
+              }
+              else {
+                sh """
+                  ${DOCKER_COMPOSE_PATH} --env-file .env rm -f -s -v nginx php-fpm
+                  sleep 20
+                  docker container prune -f --filter label=${ env.DOCKER_PROJ_LABEL }
+                  docker volume ls -q -f label=${ env.DOCKER_PROJ_LABEL } -f label=${ env.DOCKER_PROJ_LABEL_DATA } | xargs docker volume rm -f
+                  ${DOCKER_COMPOSE_PATH} --env-file .env up -d
+                """
+              }
+            } catch (err) {
+              sh "${DOCKER_COMPOSE_PATH} --env-file .env ps"
+              echo "${err}"
+              error('The update deploy failed.')
+            }
+          }
+        }
+      }
+    }
+
+    // Stage 9
+    stage('Stage 9 - Configuring the application') {
+      steps {
+        script {
+          try {
+            if (params.DEPLOY_ACTION == 'Update') {
+              sh """
+                docker exec -i ${DOCKER_CONTAINER_APP} bash docker/${PROJ_ENV}/app_configuration update
+              """
+            }
+            else {
+              sh """
+                docker exec -i ${DOCKER_CONTAINER_APP} bash docker/${PROJ_ENV}/app_configuration fresh
+              """
+            }
+          } catch (err) {
+            echo "${err}"
+            error('Failed during the configuration of the application.')
+          }
+        }
+      }
+    }
+
+    // Stage 10
+    stage('Stage 10 - Running the tests') {
+      steps {
+        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE', message: 'The tests failed.') {
+          sh """
+            docker exec -i ${DOCKER_CONTAINER_APP} php vendor/bin/phpunit --log-junit ${PROJ_TESTS_PATH}/${PROJ_TESTS_FILE}
+          """
+        }
+      }
+    }
+
+    // Stage 11
+    stage('Stage 11 - Publishing the tests results') {
+      steps {
+        script {
+          try {
+            sh """
+              docker cp ${DOCKER_CONTAINER_APP}:${PROJ_TESTS_PATH}/${PROJ_TESTS_FILE} .
+            """
+            junit skipPublishingChecks: true, testResults: "**/${PROJ_TESTS_FILE}"
+          } catch (err) {
+            echo "${err}"
+            error('Error publishing the tests.')
+          }
+        }
+      }
+    }
+
+  }
+
+  post {
+
+    always {
+      cleanWs()
+    }
+
+    success {
+      slackSend(channel: "${SLACK_CHANNEL}", message: "${SLACK_MSG_SUCCESS}")
+    }
+
+    failure {
+      slackSend(channel: "${SLACK_CHANNEL}", message: "${SLACK_MSG_FAILURE}")
+    }
+
+    unstable {
+      slackSend(channel: "${SLACK_CHANNEL}", message: "${SLACK_MSG_UNSTABLE}")
+    }
+
+    aborted {
+      slackSend(channel: "${SLACK_CHANNEL}", message: "${SLACK_MSG_ABORTED}")
+    }
+
+  }
+
+}

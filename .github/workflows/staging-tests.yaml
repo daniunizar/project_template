@@ -1,0 +1,121 @@
+## This workflow is triggered when a commit is made in 'develop' branch.
+##
+## Client:
+## Project:
+## Repository: https://github.com/novadevs-opensource/
+## Version: 1.1.0
+
+name: Staging-Develop-php-laravel-template
+
+on:
+  push:
+    branches-ignore:
+      - master
+      - main
+
+env:
+  PROJ_TEST_REPORT_NAME: "report-${{ github.run_number }}"
+  DB_NAME: db_laravel_testing
+  DB_USER: dba_laravel_testing
+  DB_PWD: 'L@ravel2022!'
+  DB_ROOT_PWD: 'R!!t2022.'
+
+jobs:
+
+  test:
+    name: 'Run Laravel tests'
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: ${{ env.DB_NAME }}
+          MYSQL_USER: ${{ env.DB_USER }}
+          MYSQL_PASSWORD: ${{ env.DB_PWD }}
+          MYSQL_ROOT_PASSWORD: ${{ env.DB_ROOT_PWD }}
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+      - name: Fetch the code
+        uses: actions/checkout@v3
+
+      - name: Cache composer dependencies
+        uses: actions/cache@v1
+        with:
+          path: vendor
+          key: composer-${{ hashFiles('composer.lock') }}
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+         php-version: '8.1'
+         extensions: bcmath, ctype, fileinfo, json, mbstring, openssl, pdo, tokenizer, xml, zip
+         coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer install \
+            --no-ansi \
+            --no-interaction \
+            --no-scripts \
+            --no-suggest \
+            --no-progress \
+            --prefer-dist
+
+      - name: Create the testing file
+        run: cp .env.example .env.testing
+
+      - name: Change DB variables to the env file
+        run: |
+          sed -i -e 's/DB_HOST=.*/DB_HOST=127.0.0.1/' \
+              -e "s/DB_DATABASE=.*/DB_DATABASE=${{ env.DB_NAME }}/" \
+              -e "s/DB_USERNAME=.*/DB_USERNAME=${{ env.DB_USER }}/" \
+              -e "s/DB_PASSWORD=-*/DB_PASSWORD=${{ env.DB_PWD }}/" \
+              .env.testing
+
+      # - name: Add additional information to the env file
+      #   run: |
+      #     sed -i -e 's#API_ADMIN_USER_EMAIL=.*#API_ADMIN_USER_EMAIL=${{ secrets.API_ADMIN_USER_EMAIL }}#' \
+      #         -e 's#API_ADMIN_USER_PASSWORD=.*#API_ADMIN_USER_PASSWORD=\$${{ secrets.API_ADMIN_USER_PASSWORD }}#' \
+      #         -e 's#API_ADMIN_USER_CLEAR_PASSWORD=.*#API_ADMIN_USER_CLEAR_PASSWORD=${{ secrets.API_ADMIN_USER_CLEAR_PASSWORD }}#' \
+      #         -e 's#API_SIMPLE_USER_EMAIL=.*#API_SIMPLE_USER_EMAIL=${{ secrets.API_SIMPLE_USER_EMAIL }}#' \
+      #         -e 's#API_SIMPLE_USER_PASSWORD=.*#API_SIMPLE_USER_PASSWORD=\$${{ secrets.API_SIMPLE_USER_PASSWORD }}#' \
+      #         -e 's#API_SIMPLE_USER_CLEAR_PASSWORD=.*#API_SIMPLE_USER_CLEAR_PASSWORD=${{ secrets.API_SIMPLE_USER_CLEAR_PASSWORD }}#' \
+      #         .env.testing
+
+      - name: Generate KEYS
+        run: |
+          yes | php artisan --env=testing key:generate
+
+      ## For debugging
+      # - name: Debug env.testing file
+      #   run: cat .env.testing
+
+      - name: Run tests
+        id: run-tests
+        run: php vendor/bin/phpunit --log-junit ${{ env.PROJ_TEST_REPORT_NAME }}.xml
+
+      - name: Use NPM 18
+        if: failure() && steps.run-tests.outcome == 'failure'
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+
+      - name: Install Xunit viewer
+        if: failure() && steps.run-tests.outcome == 'failure'
+        run: npm install xunit-viewer
+
+      - name: Generate the test report
+        if: failure() && steps.run-tests.outcome == 'failure'
+        run: node_modules/xunit-viewer/bin/xunit-viewer -r ${{ env.PROJ_TEST_REPORT_NAME }}.xml -o ${{ env.PROJ_TEST_REPORT_NAME }}.html
+
+      - name: Save report in an artifact
+        if: failure() && steps.run-tests.outcome == 'failure'
+        uses: actions/upload-artifact@v2
+        with:
+          name: phpunit-report
+          path: |
+            ${{ env.PROJ_TEST_REPORT_NAME }}.html
+            storage/logs/laravel.log
