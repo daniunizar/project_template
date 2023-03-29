@@ -1,13 +1,13 @@
 ## Variables
 LOCAL_USER := $(shell whoami)
-DOMAIN_NAME := 'php-laravel.local.novadevs.com'
-HTTP_PORT := '8080'
-HTTPS_PORT := '8081'
-NGINX_CONTAINER := 'php-laravel-template_nginx'
-WEB_CONTAINER := 'php-laravel-template_php-fpm'
-WEB_IMG_LABEL := 'php-laravel-template'
-DB_CONTAINER := 'php-laravel-template_db'
-DB_CONTAINER_TESTING := 'php-laravel-template_db-testing'
+DOMAIN_NAME := 'local-voyalteatro.local.novadevs.com'
+HTTP_PORT := '9090'
+HTTPS_PORT := '9091'
+NGINX_CONTAINER := 'local-voyalteatro_nginx'
+WEB_CONTAINER := 'local-voyalteatro_php-fpm'
+WEB_IMG_LABEL := 'local-voyalteatro'
+DB_CONTAINER := 'local-voyalteatro_db'
+DB_CONTAINER_TESTING := 'local-voyalteatro_db-testing'
 APP_IMG := $(shell docker images -q --filter label=custom.project=$(WEB_IMG_LABEL) --format "{{.ID}}")
 PROJ_ENV = local
 PROJ_SCRIPT = app_configuration

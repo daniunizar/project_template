@@ -63,6 +63,11 @@ function fresh {
       /usr/bin/yes | /usr/local/bin/php artisan key:generate
   fi
 
+  if [[ -z $(egrep '^APP_KEY=' .env.testing | cut -d "=" -f2) ]];
+    then
+      /usr/bin/yes | APP_ENV=testing /usr/local/bin/php artisan key:generate
+  fi
+
   # /usr/bin/yes | /usr/local/bin/php artisan jwt:secret
 
   /usr/bin/yes | /usr/local/bin/php artisan migrate --seed
