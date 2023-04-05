@@ -1,11 +1,11 @@
 ## This workflow is triggered when a commit is made in 'develop' branch.
 ##
-## Client:
-## Project:
-## Repository: https://github.com/novadevs-opensource/
-## Version: 1.1.0
+## Client: Voy al teatro
+## Project: Voy al teatro - Backend
+## Repository: https://github.com/novadevs-opensource/voyalteatro
+## Version: 0.0.1
 
-name: Staging-Develop-php-laravel-template
+name: Tests
 
 on:
   push:
@@ -14,6 +14,8 @@ on:
       - main
 
 env:
+  SLACK_CHANNEL: C04RN8G6L31
+  SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
   PROJ_TEST_REPORT_NAME: "report-${{ github.run_number }}"
   DB_NAME: db_laravel_testing
   DB_USER: dba_laravel_testing
@@ -50,7 +52,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-         php-version: '8.1'
+         php-version: '8.2'
          extensions: bcmath, ctype, fileinfo, json, mbstring, openssl, pdo, tokenizer, xml, zip
          coverage: none
 
@@ -119,3 +121,9 @@ jobs:
           path: |
             ${{ env.PROJ_TEST_REPORT_NAME }}.html
             storage/logs/laravel.log
+
+      - name: Sending a notification if failure
+        if: ${{ failure() }}
+        uses: pullreminders/slack-action@master
+        with:
+          args: '{\"channel\":\"${{ env.SLACK_CHANNEL }}\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Server:* Github Actions\n\n *Workflow:* ${{ github.workflow }}\"}},{\"type\":\"section\",\"fields\":[{\"type\":\"mrkdwn\",\"text\":\"*Repository:*\n${{ github.repository }}\"},{\"type\":\"mrkdwn\",\"text\":\"*Env:*\n${{ env.DEPLOY_ENV }}\"}]},{\"type\":\"section\",\"fields\":[{\"type\":\"mrkdwn\",\"text\":\"*User:*\n${{ github.triggering_actor }}\"},{\"type\":\"mrkdwn\",\"text\":\"*Action:*\n${{ env.DEPLOY_ACTION }}\"}]},{\"type\":\"section\",\"fields\":[{\"type\":\"mrkdwn\",\"text\":\"*BuildID:*\n${{ github.run_number }}\"},{\"type\":\"mrkdwn\",\"text\":\"*Status:*\n:x:\"}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Commit message:* ${{ github.event.head_commit.message }}\n\n *Commit URL:* ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}\"}}]}'
