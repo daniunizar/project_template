@@ -1,9 +1,9 @@
 // This pipeline is manually executed by a developer
 //
-// Client: php-laravel-template
-// Project: php-laravel-template
-// Repository: https://github.com/novadevs-opensource/php-laravel-template.git
-// Version: 1.2.0
+// Client: Voy al teatro
+// Project: Voy al teatro - Backend
+// Repository: https://github.com/novadevs-opensource/voyalteatro.git
+// Version: 0.0.1
 
 
 pipeline {
@@ -28,20 +28,20 @@ pipeline {
   environment {
     JENKINS_REPO_CREDENTIALS = 'github-cicd-tests'
     PROJ_ENV = 'staging'
-    PROJ_REPO_URL = 'git@github.com:novadevs-opensource/php-laravel-template.git'
+    PROJ_REPO_URL = 'git@github.com:novadevs-opensource/voyalteatro.git'
     PROJ_TESTS_PATH= '/var/www/storage/'
     PROJ_TESTS_FILE= 'tests-report.xml'
     DOCKER_COMPOSE_PATH = 'docker compose'
     DOCKER_BUILD_TAG_ROOT = 'novadevs'
-    DOCKER_PROJ_NAME = 'staging-php-laravel-template'
+    DOCKER_PROJ_NAME = 'staging-voyalteatro'
     DOCKER_PROJ_LABEL = "custom.project=${DOCKER_PROJ_NAME}"
     DOCKER_PROJ_LABEL_DATA = 'custom.data=code'
     DOCKER_CONTAINER_APP = "${DOCKER_PROJ_NAME}_php-fpm"
     DOCKER_CONTAINER_WEB = "${DOCKER_PROJ_NAME}_nginx"
-    AWS_PS_DOCKER_ENV = '/php-laravel-template/staging/docker-env'
-    AWS_PS_ENV = '/php-laravel-template/staging/env'
-    AWS_PS_ENV_TESTING = '/php-laravel-template/staging/env-testing'
-    SLACK_CHANNEL = 'C044MBHCG9M'
+    AWS_PS_DOCKER_ENV = '/voyalteatro/staging/docker-env'
+    AWS_PS_ENV = '/voyalteatro/staging/env'
+    AWS_PS_ENV_TESTING = '/voyalteatro/staging/env-testing'
+    SLACK_CHANNEL = 'C04RN8G6L31'
     SLACK_MSG_SUCCESS = "*st01.staging.what2visit.com* - ${DOCKER_PROJ_NAME} \n\n*Branch:* ${params.BRANCH_NAME} \n\n*Deploy Type:* ${params.DEPLOY_ACTION} \n\n*User:* ${BUILD_USER} \n\n*Status:* :white_check_mark: \n\n *Build ID:* ${BUILD_ID} \n\n *Jenkins URL:* ${BUILD_URL}"
     SLACK_MSG_UNSTABLE = "*st01.staging.what2visit.com* - ${DOCKER_PROJ_NAME} \n\n*Branch:* ${params.BRANCH_NAME} \n\n*Deploy Type:* ${params.DEPLOY_ACTION} \n\n*User:* ${BUILD_USER} \n\n*Status:* :warning: \n\n *Build ID:* ${BUILD_ID} \n\n *Jenkins URL:* ${BUILD_URL}"
     SLACK_MSG_FAILURE = "*st01.staging.what2visit.com* - ${DOCKER_PROJ_NAME} \n\n*Branch:* ${params.BRANCH_NAME} \n\n*Deploy Type:* ${params.DEPLOY_ACTION} \n\n*User:* ${BUILD_USER} \n\n*Status:* :x:\n\n *Build ID:* ${BUILD_ID} \n\n *Jenkins URL:* ${BUILD_URL}"
